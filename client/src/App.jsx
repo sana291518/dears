@@ -9,7 +9,11 @@ import shadow from 'leaflet/dist/images/marker-shadow.png';
 import { registerSW } from 'virtual:pwa-register';
 import { useTranslation } from 'react-i18next';
 
-const socket = io('http://localhost:5000');
+const API_URL = import.meta.env.VITE_API_URL;
+const socket = io(API_URL);
+console.log('🔍 Loaded API_URL:', API_URL);
+
+
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -62,9 +66,12 @@ function App() {
 
   const fetchAlerts = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/alerts');
+      const res = await fetch(`${API_URL}/api/alerts`);
+
       const data = await res.json();
       setAlerts(data);
+
+
     } catch (err) {
       console.error("Failed to fetch alerts:", err);
     }
@@ -94,17 +101,17 @@ function App() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const response = await fetch('http://localhost:5000/api/alerts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type,
-          description,
-          latitude: location.lat,
-          longitude: location.lon,
-        }),
-      });
+    try { const response = await fetch(`${API_URL}/api/alerts`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    type,
+    description,
+    latitude: location.lat,
+    longitude: location.lon,
+  }),
+});
+
 
       if (response.ok) {
         alert(t('reportSuccess'));
@@ -121,7 +128,7 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/auth/login', {
+      const res = await fetch('${API_URL}/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -143,7 +150,7 @@ function App() {
 
   const resolveAlert = async (id) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/alerts/${id}/resolve`, {
+      const res = await fetch(`${API_URL}/api/alerts/${id}/resolve`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}` },
       });
