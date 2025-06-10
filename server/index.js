@@ -12,13 +12,16 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-// ✅ Allow frontend domain from .env
-const allowedOrigin = process.env.CLIENT_ORIGIN || "*";
+// ✅ Define allowed origins for CORS and Socket.IO
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://resonant-dango-6097ed.netlify.app"
+];
 
-// ✅ Socket.IO CORS setup
+// ✅ Setup Socket.IO with allowed origins
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigin,
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PATCH"]
   }
 });
@@ -28,9 +31,15 @@ app.set("io", io);
 
 // ✅ Middleware
 app.use(cors({
-  origin: allowedOrigin,
-  methods: ["GET", "POST", "PATCH"],
-  credentials: true
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PATCH"]
 }));
 app.use(express.json());
 
@@ -42,7 +51,7 @@ app.use("/api/alerts", alertRoutes);
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connected");
-    const PORT = process.env.PORT;
+    const PORT = process.env.PORT || 5000;
     server.listen(PORT, () =>
       console.log(`🚀 Server running on port ${PORT}`)
     );
