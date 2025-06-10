@@ -1,0 +1,20 @@
+{
+  "name": "DEARS - Emergency Alert System",
+  "short_name": "DEARS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff4e6",
+  "theme_color": "#d9534f",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
