@@ -15,7 +15,7 @@ const server = http.createServer(app);
 // ✅ Define allowed origins for CORS and Socket.IO
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://resonant-dango-6097ed.netlify.app"
+  "https://dearss.netlify.app"
 ];
 
 // ✅ Setup Socket.IO with allowed origins
