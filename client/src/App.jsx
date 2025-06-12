@@ -6,14 +6,13 @@ import io from 'socket.io-client';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import shadow from 'leaflet/dist/images/marker-shadow.png';
-import { registerSW } from 'virtual:pwa-register';
 import { useTranslation } from 'react-i18next';
 
 const API_URL = import.meta.env.VITE_API_URL;
 const socket = io(API_URL);
 console.log('🔍 Loaded API_URL:', API_URL);
 
-// fix default Leaflet marker paths
+// Fix default Leaflet marker paths
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: iconRetina,
@@ -50,6 +49,17 @@ function App() {
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
     setTheme(next);
+  };
+
+  /* -------------------- Language -------------------- */
+  useEffect(() => {
+    const storedLang = localStorage.getItem('lang');
+    if (storedLang) i18n.changeLanguage(storedLang);
+  }, []);
+
+  const changeLanguage = (lang) => {
+    i18n.changeLanguage(lang);
+    localStorage.setItem('lang', lang);
   };
 
   /* -------------------- Geolocation -------------------- */
@@ -96,6 +106,15 @@ function App() {
     };
   }, []);
 
+  /* -------------------- Persist Admin Token -------------------- */
+  useEffect(() => {
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+      setToken(savedToken);
+      setAdmin(true);
+    }
+  }, []);
+
   /* -------------------- Submit Report -------------------- */
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -135,6 +154,7 @@ function App() {
       if (res.ok && data.token) {
         setAdmin(true);
         setToken(data.token);
+        localStorage.setItem('token', data.token);
         alert(t('loginSuccess'));
       } else {
         alert(t('loginFail'));
@@ -191,19 +211,16 @@ function App() {
   /* -------------------- UI -------------------- */
   return (
     <div style={{ padding: '2rem', fontFamily: 'Arial' }}>
-      {/* Theme toggle */}
       <button onClick={toggleTheme} style={{ marginBottom: '1rem' }}>
         {theme === 'light' ? '🌙 Dark Mode' : '🔆 Light Mode'}
       </button>
 
-      {/* Language selector */}
       <div style={{ marginBottom: '1rem' }}>
         🌐 {t('language')}:
-        <button onClick={() => i18n.changeLanguage('en')}>EN</button>
-        <button onClick={() => i18n.changeLanguage('hi')}>हिंदी</button>
+        <button onClick={() => changeLanguage('en')}>EN</button>
+        <button onClick={() => changeLanguage('hi')}>हिंदी</button>
       </div>
 
-      {/* Report form */}
       <h2>{t('reportEmergency')}</h2>
       <form
         onSubmit={handleSubmit}
@@ -233,7 +250,6 @@ function App() {
 
       <hr style={{ margin: '2rem 0' }} />
 
-      {/* Admin login / dashboard */}
       <h3>{t('adminLogin')}</h3>
       {!admin ? (
         <>
@@ -259,7 +275,7 @@ function App() {
               .map((alert) => (
                 <li key={alert._id} style={{ marginBottom: '1rem' }}>
                   <strong>{alert.type}</strong>: {alert.description} —{' '}
-                  <em>{new Date(alert.timestamp).toLocaleString()}</em>
+                  <em>{alert.timestamp ? new Date(alert.timestamp).toLocaleString() : '—'}</em>
                   <button
                     style={{ marginLeft: '1rem' }}
                     onClick={() => resolveAlert(alert._id)}
@@ -275,7 +291,7 @@ function App() {
       <hr style={{ margin: '2rem 0' }} />
 
       {/* Map */}
-      {location.lat && location.lon && (
+      {location.lat !== null && location.lon !== null && (
         <>
           <p>
             📍 {t('location')}: {location.lat.toFixed(4)}, {location.lon.toFixed(4)}
@@ -304,13 +320,17 @@ function App() {
                     <br />
                     {alert.description}
                     <br />
-                    <small>{new Date(alert.timestamp).toLocaleString()}</small>
+                    <small>
+                      {alert.timestamp ? new Date(alert.timestamp).toLocaleString() : '—'}
+                    </small>
                     <br />
                     {alert.resolved && (
                       <>
                         ✅ {t('resolved')}
                         <br />
-                        <small>{new Date(alert.resolvedAt).toLocaleString()}</small>
+                        <small>
+                          {alert.resolvedAt ? new Date(alert.resolvedAt).toLocaleString() : ''}
+                        </small>
                       </>
                     )}
                   </Popup>
@@ -321,13 +341,12 @@ function App() {
         </>
       )}
 
-      {/* Live alerts list */}
       <h3>📢 {t('liveAlerts')}</h3>
       <ul>
         {alerts.map((alert, idx) => (
           <li key={idx}>
             <strong>{alert.type}</strong>: {alert.description} —{' '}
-            <em>{new Date(alert.timestamp).toLocaleString()}</em>
+            <em>{alert.timestamp ? new Date(alert.timestamp).toLocaleString() : '—'}</em>
             {alert.resolved && (
               <span style={{ marginLeft: '0.5rem', color: 'green' }}>
                 ✅ {t('resolved')}
@@ -337,7 +356,7 @@ function App() {
         ))}
       </ul>
 
-      {/* Install banner (snackbar style) */}
+      {/* Install banner */}
       {showInstall && (
         <div
           style={{
@@ -362,6 +381,7 @@ function App() {
 
           <button
             onClick={handleInstall}
+            aria-label="Install App"
             style={{
               padding: '0.4rem 0.8rem',
               fontWeight: 600,
@@ -377,6 +397,7 @@ function App() {
 
           <button
             onClick={handleCloseInstall}
+            aria-label="Close Install Banner"
             style={{
               background: 'transparent',
               border: 'none',
@@ -385,7 +406,6 @@ function App() {
               cursor: 'pointer',
               color: 'inherit',
             }}
-            aria-label="close"
           >
             ×
           </button>
@@ -395,5 +415,4 @@ function App() {
   );
 }
 
-registerSW({ immediate: true });
 export default App;
