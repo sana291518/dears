@@ -1,4 +1,4 @@
-// [SAME IMPORTS AS BEFORE]
+// App.jsx
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -11,7 +11,6 @@ import { useTranslation } from 'react-i18next';
 
 const API_URL = import.meta.env.VITE_API_URL;
 const socket = io(API_URL);
-console.log('🔍 Loaded API_URL:', API_URL);
 
 // Fix Leaflet icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -36,27 +35,22 @@ function App() {
   const [showInstall, setShowInstall] = useState(false);
   const deferredPrompt = useRef(null);
 
-  // Theme
+  // Theme + Language
   useEffect(() => {
-    const stored = localStorage.getItem('theme');
-    const system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    const initial = stored || system;
-    document.documentElement.setAttribute('data-theme', initial);
-    setTheme(initial);
-  }, []);
+    const stored = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', stored);
+    setTheme(stored);
 
-  const toggleTheme = () => {
-    const next = theme === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('theme', next);
-    setTheme(next);
-  };
-
-  // Language
-  useEffect(() => {
     const storedLang = localStorage.getItem('lang');
     if (storedLang) i18n.changeLanguage(storedLang);
   }, []);
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+  };
 
   const changeLanguage = (lang) => {
     i18n.changeLanguage(lang);
@@ -66,9 +60,7 @@ function App() {
   // Location
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-      },
+      (pos) => setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
       (err) => {
         alert(t('locationDenied'));
         console.error('Geolocation error:', err);
@@ -76,7 +68,7 @@ function App() {
     );
   }, []);
 
-  // Alerts
+  // Initial alerts + sockets
   const fetchAlerts = async () => {
     try {
       const res = await fetch(`${API_URL}/api/alerts`);
@@ -89,32 +81,25 @@ function App() {
 
   useEffect(() => {
     fetchAlerts();
-  }, []);
-
-  // Sockets
-  useEffect(() => {
     socket.on('new-alert', (alert) => {
       setAlerts((prev) => [alert, ...prev]);
-      const audio = new Audio('/alert.mp3');
-      audio.play().catch(console.error);
+      new Audio('/alert.mp3').play().catch(console.error);
       navigator.vibrate?.([200, 100, 200]);
     });
-
     socket.on('alert-resolved', (updated) => {
       setAlerts((prev) => prev.map((a) => (a._id === updated._id ? updated : a)));
     });
-
     return () => {
       socket.off('new-alert');
       socket.off('alert-resolved');
     };
   }, []);
 
-  // Admin Token
+  // Token
   useEffect(() => {
-    const savedToken = localStorage.getItem('token');
-    if (savedToken) {
-      setToken(savedToken);
+    const saved = localStorage.getItem('token');
+    if (saved) {
+      setToken(saved);
       setAdmin(true);
     }
   }, []);
@@ -146,7 +131,7 @@ function App() {
     }
   };
 
-  // Admin Login
+  // Login / Logout
   const handleLogin = async () => {
     try {
       const res = await fetch(`${API_URL}/api/auth/login`, {
@@ -167,6 +152,13 @@ function App() {
       console.error(err);
       alert(t('loginError'));
     }
+  };
+
+  const handleLogout = () => {
+    setAdmin(false);
+    setToken('');
+    localStorage.removeItem('token');
+    alert(t('logoutSuccess'));
   };
 
   // Resolve Alert
@@ -200,87 +192,73 @@ function App() {
   }, []);
 
   const handleInstall = async () => {
-    const promptEvent = deferredPrompt.current;
-    if (!promptEvent) return;
-    promptEvent.prompt();
-    const choice = await promptEvent.userChoice;
-    if (choice.outcome === 'accepted') {
-      console.log('PWA installed');
-    }
+    const prompt = deferredPrompt.current;
+    if (!prompt) return;
+    prompt.prompt();
+    await prompt.userChoice;
     setShowInstall(false);
     deferredPrompt.current = null;
   };
 
-  const handleCloseInstall = () => {
-    setShowInstall(false);
-    deferredPrompt.current = null;
-  };
-
-  // -------------------- UI --------------------
   return (
-    <div style={{ padding: '2rem' }}>
-      {/* Language and Theme */}
-      <button onClick={toggleTheme}>{theme === 'light' ? '🌙 Dark' : '🔆 Light'}</button>
-      <div>
-        {t('language')}:
-        <button onClick={() => changeLanguage('en')}>EN</button>
-        <button onClick={() => changeLanguage('hi')}>हिंदी</button>
-      </div>
+    <div className="app">
+      <header className="top-bar">
+        <button onClick={toggleTheme}>{theme === 'light' ? '🌙' : '🔆'}</button>
+        <div className="lang-buttons">
+          <button onClick={() => changeLanguage('en')}>EN</button>
+          <button onClick={() => changeLanguage('hi')}>हिंदी</button>
+        </div>
+      </header>
 
-      {/* Form */}
-      <h2>{t('reportEmergency')}</h2>
-      <form onSubmit={handleSubmit}>
-        <select value={type} onChange={(e) => setType(e.target.value)} required>
-          <option value="">{t('selectType')}</option>
-          <option value="fire">🔥 {t('fire')}</option>
-          <option value="flood">🌊 {t('flood')}</option>
-          <option value="earthquake">🌍 {t('earthquake')}</option>
-          <option value="violence">🚔 {t('violence')}</option>
-          <option value="medical">🩺 {t('medical')}</option>
-        </select>
-        <textarea
-          placeholder={t('describePlaceholder')}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={4}
-          required
-        />
-        <button type="submit">{t('submitReport')}</button>
-      </form>
+      <section className="form-section">
+        <h2>{t('reportEmergency')}</h2>
+        <form onSubmit={handleSubmit}>
+          <select value={type} onChange={(e) => setType(e.target.value)} required>
+            <option value="">{t('selectType')}</option>
+            <option value="fire">🔥 {t('fire')}</option>
+            <option value="flood">🌊 {t('flood')}</option>
+            <option value="earthquake">🌍 {t('earthquake')}</option>
+            <option value="violence">🚔 {t('violence')}</option>
+            <option value="medical">🩺 {t('medical')}</option>
+          </select>
+          <textarea
+            placeholder={t('describePlaceholder')}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            required
+          />
+          <button type="submit">{t('submitReport')}</button>
+        </form>
+      </section>
 
-      {/* Admin */}
-      <h3>{t('adminLogin')}</h3>
-      {!admin ? (
-        <>
-          <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" />
-          <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" type="password" />
-          <button onClick={handleLogin}>{t('login')}</button>
-        </>
-      ) : (
-        <ul>
-          {alerts.filter((a) => !a.resolved).map((alert) => (
-            <li key={alert._id}>
-              {alert.type} - {alert.description} -{' '}
-              {alert.timestamp && new Date(alert.timestamp).toLocaleString()}
-              <button onClick={() => resolveAlert(alert._id)}>{t('resolve')}</button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <section className="admin-panel">
+        <h3>{t('adminLogin')}</h3>
+        {!admin ? (
+          <>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" />
+            <button onClick={handleLogin}>{t('login')}</button>
+          </>
+        ) : (
+          <>
+            <button onClick={handleLogout}>{t('logout')}</button>
+            <ul className="alert-list">
+              {alerts.filter((a) => !a.resolved).map((alert) => (
+                <li key={alert._id}>
+                  <b>{alert.type}</b>: {alert.description} - {alert.timestamp && new Date(alert.timestamp).toLocaleString()}
+                  <button onClick={() => resolveAlert(alert._id)}>{t('resolve')}</button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
 
-      {/* Map */}
-      {location.lat !== null && location.lon !== null && (
-        <>
-          <h3>🗺️ {t('alertMap')}</h3>
-          <MapContainer
-            center={[location.lat, location.lon]}
-            zoom={13}
-            style={{ height: '400px', width: '100%' }}
-          >
-            <TileLayer
-              attribution="&copy; OpenStreetMap"
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+      <section className="map-section">
+        {location.lat && location.lon && (
+          <MapContainer center={[location.lat, location.lon]} zoom={13} style={{ height: '400px', width: '100%' }}>
+            <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <Marker position={[location.lat, location.lon]}>
               <Popup>{t('youAreHere')}</Popup>
             </Marker>
@@ -297,26 +275,26 @@ function App() {
               )
             ))}
           </MapContainer>
-        </>
-      )}
+        )}
+      </section>
 
-      {/* Live Alerts */}
-      <h3>📢 {t('liveAlerts')}</h3>
-      <ul>
-        {alerts.map((a, i) => (
-          <li key={i}>
-            <strong>{a.type}</strong>: {a.description}{' '}
-            {a.resolved && <span style={{ color: 'green' }}>✅ {t('resolved')}</span>}
-          </li>
-        ))}
-      </ul>
+      <section className="alert-section">
+        <h3>📢 {t('liveAlerts')}</h3>
+        <ul className="alert-list">
+          {alerts.map((a, i) => (
+            <li key={i}>
+              <b>{a.type}</b>: {a.description}{' '}
+              {a.resolved && <span className="resolved">✅ {t('resolved')}</span>}
+            </li>
+          ))}
+        </ul>
+      </section>
 
-      {/* PWA Banner */}
       {showInstall && (
-        <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: '#fff', padding: '1rem', borderRadius: 12, boxShadow: '0 2px 10px rgba(0,0,0,0.3)' }}>
+        <div className="pwa-banner">
           <span>{t('installBanner')}</span>
           <button onClick={handleInstall}>📲 {t('installApp')}</button>
-          <button onClick={handleCloseInstall}>×</button>
+          <button onClick={() => setShowInstall(false)}>×</button>
         </div>
       )}
     </div>

@@ -1,9 +1,9 @@
+// vite.config.js
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-
   plugins: [
     react(),
     VitePWA({
@@ -44,7 +44,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/offline.html',
-        globPatterns: ['**/*.{js,css,html,png,svg,mp3}']
+        globPatterns: ['**/*.{js,css,html,png,svg,mp3,json}']
       }
     })
   ]

@@ -30,5 +30,7 @@
   "loginFail": "❌ Invalid credentials",
   "loginError": "Login error",
   "resolveFail": "Failed to resolve alert",
-  "resolveError": "Resolve error"
+  "resolveError": "Resolve error",
+  "logoutSuccess": "Logged out successfully",
+  "logout": "Logout"
 }

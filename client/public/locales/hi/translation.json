@@ -30,5 +30,7 @@
   "loginFail": "❌ अमान्य प्रमाण-पत्र",
   "loginError": "लॉगिन त्रुटि",
   "resolveFail": "चेतावनी सुलझाने में विफल",
-  "resolveError": "सुलझाने में त्रुटि"
+  "resolveError": "सुलझाने में त्रुटि",
+  "logoutSuccess": "लॉगआउट सफल रहा",
+  "logout": "लॉगआउट"
 }
