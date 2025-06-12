@@ -1,307 +1,233 @@
 import 'leaflet/dist/leaflet.css';
+import './App.css';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import icon from 'leaflet/dist/images/marker-icon.png';
-import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
-import shadow from 'leaflet/dist/images/marker-shadow.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+import i18next from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { FaSun, FaMoon } from 'react-icons/fa';
 
-const API_URL = import.meta.env.VITE_API_URL;
-const socket = io(API_URL);
+const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
 
-// Fix default Leaflet marker paths
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: iconRetina,
+let DefaultIcon = L.icon({
   iconUrl: icon,
-  shadowUrl: shadow,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
 });
+L.Marker.prototype.options.icon = DefaultIcon;
 
 function App() {
+  const [alerts, setAlerts] = useState([]);
+  const [formData, setFormData] = useState({ type: '', description: '', latitude: '', longitude: '' });
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+  const [isAdmin, setIsAdmin] = useState(false);
   const { t, i18n } = useTranslation();
-
-  // UI state
-  const [theme, setTheme] = useState('light');
-  const [language, setLanguage] = useState('en');
-  const [showInstall, setShowInstall] = useState(false);
   const deferredPrompt = useRef(null);
 
-  // Geolocation & data
-  const [location, setLocation] = useState({ lat: null, lon: null });
-  const [alerts, setAlerts] = useState([]);
-
-  // Admin/login state
-  const [admin, setAdmin] = useState(false);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [token, setToken] = useState('');
-
-  // Report form
-  const [type, setType] = useState('');
-  const [description, setDescription] = useState('');
-
-  // 1️⃣ Initialize theme & language from localStorage
+  // Preload alert.mp3 to cache for offline
   useEffect(() => {
-    const storedTheme = localStorage.getItem('theme') || 'light';
-    document.documentElement.setAttribute('data-theme', storedTheme);
-    setTheme(storedTheme);
+    const audio = new Audio('/alert.mp3');
+    audio.load();
+  }, []);
 
-    const storedLang = localStorage.getItem('lang') || 'en';
-    i18n.changeLanguage(storedLang);
-    setLanguage(storedLang);
-  }, [i18n]);
-
-  // Persist theme & language
-  useEffect(() => localStorage.setItem('theme', theme), [theme]);
-  useEffect(() => localStorage.setItem('lang', language), [language]);
-
-  // 2️⃣ Restore admin/token on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('token');
-    if (saved) {
-      setToken(saved);
-      setAdmin(true);
+  const fetchAlerts = async () => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/alerts`);
+      const data = await res.json();
+      setAlerts(data.reverse());
+    } catch (err) {
+      console.error('Failed to fetch alerts', err);
     }
+  };
+
+  useEffect(() => {
+    fetchAlerts();
   }, []);
 
-  // 3️⃣ Get geolocation once
-  useEffect(() => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-      () => alert(t('locationDenied'))
-    );
-  }, [t]);
-
-  // 4️⃣ Fetch existing alerts on mount
-  useEffect(() => {
-    fetch(`${API_URL}/api/alerts`)
-      .then((res) => res.json())
-      .then(setAlerts)
-      .catch(console.error);
-  }, []);
-
-  // 5️⃣ Socket.IO for real-time alerts
   useEffect(() => {
     socket.on('new-alert', (alert) => {
       setAlerts((prev) => [alert, ...prev]);
-      new Audio('/alert.mp3').play().catch(() => {});
-      navigator.vibrate?.([200, 100, 200]);
-    });
-    return () => socket.off('new-alert');
-  }, []);
 
-  // 6️⃣ PWA install prompt handling
-  useEffect(() => {
-    const onBeforeInstallPrompt = (e) => {
-      e.preventDefault();
-      deferredPrompt.current = e;
-      setShowInstall(true);
-    };
-    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
-  }, []);
+      // Play sound
+      const audio = new Audio('/alert.mp3');
+      audio.play().catch((err) => console.warn('Audio playback failed:', err));
 
-  const handleInstall = () => {
-    deferredPrompt.current?.prompt();
-    deferredPrompt.current?.userChoice.then(() => {
-      deferredPrompt.current = null;
-      setShowInstall(false);
-    });
-  };
-
-  // 7️⃣ Admin login
-  const handleLogin = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json();
-      if (res.ok && data.token) {
-        setAdmin(true);
-        setToken(data.token);
-        localStorage.setItem('token', data.token);
-        alert(t('loginSuccess'));
-      } else {
-        alert(t('loginFail'));
+      // Trigger vibration
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200]);
       }
-    } catch {
-      alert(t('loginError'));
-    }
-  };
+    });
 
-  // 8️⃣ Report submission
+    socket.on('alert-resolved', (updated) => {
+      setAlerts((prev) => prev.map((a) => (a._id === updated._id ? updated : a)));
+    });
+
+    return () => {
+      socket.off('new-alert');
+      socket.off('alert-resolved');
+    };
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const res = await fetch(`${API_URL}/api/alerts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type,
-          description,
-          latitude: location.lat,
-          longitude: location.lon,
-        }),
-      });
-      if (res.ok) {
-        alert(t('reportSuccess'));
-        setType('');
-        setDescription('');
-      } else {
-        alert(t('reportFail'));
-      }
-    } catch {
-      alert(t('reportError'));
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData),
+    });
+    if (res.ok) {
+      setFormData({ type: '', description: '', latitude: '', longitude: '' });
     }
   };
 
-  // 9️⃣ Resolve an alert
-  const resolveAlert = async (id) => {
-    try {
-      const res = await fetch(`${API_URL}/api/alerts/${id}/resolve`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const { alert: updated } = await res.json();
-        setAlerts((prev) => prev.map((a) => (a._id === updated._id ? updated : a)));
-      } else {
-        alert(t('resolveFail'));
-      }
-    } catch {
-      alert(t('resolveError'));
+  const handleResolve = async (id) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/alerts/${id}/resolve`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) alert('Resolve failed');
+  };
+
+  const handleLogin = async () => {
+    const password = prompt('Enter admin password');
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (res.ok && data.token) {
+      localStorage.setItem('token', data.token);
+      setIsAdmin(true);
+    } else {
+      alert('Login failed');
     }
   };
 
-  // --- RENDER ---
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem('theme', next);
+  };
 
-  // Fallback until geolocation is ready
-  if (location.lat === null || location.lon === null) {
-    return (
-      <div style={{ padding: '2rem', fontFamily: 'Arial' }}>
-        {t('waitingForLocation')}
-      </div>
-    );
-  }
+  const isValidCoords = (lat, lon) =>
+    typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon);
+
+  const handleInstallPrompt = (e) => {
+    e.preventDefault();
+    deferredPrompt.current = e;
+  };
+
+  useEffect(() => {
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+  }, []);
+
+  const handleInstallClick = () => {
+    if (deferredPrompt.current) {
+      deferredPrompt.current.prompt();
+      deferredPrompt.current.userChoice.then(() => {
+        deferredPrompt.current = null;
+      });
+    }
+  };
+
+  const handleLangChange = (e) => {
+    i18n.changeLanguage(e.target.value);
+    localStorage.setItem('lang', e.target.value);
+  };
+
+  useEffect(() => {
+    const savedLang = localStorage.getItem('lang') || 'en';
+    i18n.changeLanguage(savedLang);
+  }, []);
 
   return (
-    <div style={{ padding: '2rem', fontFamily: 'Arial' }}>
-      {/* Theme & Language */}
-      <button onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}>
-        {theme === 'light' ? '🌙 Dark Mode' : '🔆 Light Mode'}
-      </button>
-      <button onClick={() => { i18n.changeLanguage('en'); setLanguage('en'); }}>EN</button>
-      <button onClick={() => { i18n.changeLanguage('hi'); setLanguage('hi'); }}>HI</button>
-
-      {/* Install Banner */}
-      {showInstall && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 20,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: theme === 'dark' ? '#333' : '#fff',
-            padding: '1rem',
-            borderRadius: 8,
-            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-          }}
-        >
-          <span>{t('installBanner')}</span>
-          <button onClick={handleInstall} style={{ marginLeft: 12 }}>
-            {t('installApp')}
-          </button>
-        </div>
-      )}
-
-      {/* Report Form */}
-      <h2>{t('reportEmergency')}</h2>
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          maxWidth: 500,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1rem',
-        }}
-      >
-        <select value={type} onChange={(e) => setType(e.target.value)} required>
-          <option value="">{t('selectType')}</option>
-          <option value="fire">🔥 {t('fire')}</option>
-          <option value="flood">🌊 {t('flood')}</option>
-          <option value="earthquake">🌍 {t('earthquake')}</option>
-          <option value="violence">🚔 {t('violence')}</option>
-          <option value="medical">🩺 {t('medical')}</option>
+    <div className={`app ${theme}`}>
+      <header>
+        <h1>{t('title')}</h1>
+        <select onChange={handleLangChange} value={i18n.language}>
+          <option value="en">English</option>
+          <option value="hi">हिंदी</option>
         </select>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={4}
-          placeholder={t('describePlaceholder')}
+        <button onClick={toggleTheme}>{theme === 'dark' ? <FaSun /> : <FaMoon />}</button>
+        {!isAdmin && <button onClick={handleLogin}>{t('adminLogin')}</button>}
+        {deferredPrompt.current && <button onClick={handleInstallClick}>{t('installApp')}</button>}
+      </header>
+
+      <form onSubmit={handleSubmit}>
+        <input
+          placeholder={t('type')}
+          value={formData.type}
+          onChange={(e) => setFormData({ ...formData, type: e.target.value })}
           required
         />
-        <button type="submit">{t('submitReport')}</button>
+        <input
+          placeholder={t('description')}
+          value={formData.description}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          required
+        />
+        <input
+          placeholder={t('latitude')}
+          value={formData.latitude}
+          onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) })}
+          type="number"
+          required
+        />
+        <input
+          placeholder={t('longitude')}
+          value={formData.longitude}
+          onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) })}
+          type="number"
+          required
+        />
+        <button type="submit">{t('submit')}</button>
       </form>
 
-      <hr style={{ margin: '2rem 0' }} />
-
-      {/* Admin Login / Dashboard */}
-      <h3>{t('adminLogin')}</h3>
-      {!admin ? (
-        <>
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder={t('username')}
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={t('password')}
-          />
-          <button onClick={handleLogin}>{t('login')}</button>
-        </>
-      ) : (
-        <ul>
-          {alerts
-            .filter((a) => !a.resolved)
-            .map((a) => (
-              <li key={a._id}>
-                <strong>{a.type}</strong>: {a.description}{' '}
-                <button onClick={() => resolveAlert(a._id)}>✅ {t('resolve')}</button>
-              </li>
-            ))}
-        </ul>
-      )}
-
-      <hr style={{ margin: '2rem 0' }} />
-
-      {/* Map */}
-      <p>
-        📍 {t('location')}: {location.lat.toFixed(4)}, {location.lon.toFixed(4)}
-      </p>
-      <MapContainer
-        center={[location.lat, location.lon]}
-        zoom={13}
-        style={{ height: 400, width: '100%' }}
-      >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <Marker position={[location.lat, location.lon]}>
-          <Popup>{t('youAreHere')}</Popup>
-        </Marker>
-        {alerts.map((a, i) => (
-          <Marker key={i} position={[a.latitude, a.longitude]}>
+      <MapContainer center={[28.61, 77.23]} zoom={5} style={{ height: '400px' }}>
+        <TileLayer
+          attribution='&copy; OpenStreetMap contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        {alerts.filter(a => isValidCoords(a.latitude, a.longitude)).map((alert, idx) => (
+          <Marker key={idx} position={[alert.latitude, alert.longitude]}>
             <Popup>
-              <strong>{a.type}</strong>: {a.description}
+              <strong>{alert.type.toUpperCase()}</strong>
+              <br />
+              {alert.description}
+              <br />
+              <small>
+                {alert.timestamp ? new Date(alert.timestamp).toLocaleString() : '—'}
+              </small>
+              <br />
+              {alert.resolved && (
+                <>
+                  ✅ {t('resolved')}
+                  <br />
+                  <small>
+                    {alert.resolvedAt ? new Date(alert.resolvedAt).toLocaleString() : ''}
+                  </small>
+                </>
+              )}
+              {isAdmin && !alert.resolved && (
+                <button onClick={() => handleResolve(alert._id)}>{t('resolve')}</button>
+              )}
             </Popup>
           </Marker>
         ))}
       </MapContainer>
+
+      <footer>
+        <p>{t('footer')}</p>
+      </footer>
     </div>
   );
 }
