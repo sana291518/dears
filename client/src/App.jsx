@@ -1,46 +1,89 @@
+// [SAME IMPORTS AS BEFORE]
 import 'leaflet/dist/leaflet.css';
-import './App.css';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-import i18next from 'i18next';
+import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
+import shadow from 'leaflet/dist/images/marker-shadow.png';
 import { useTranslation } from 'react-i18next';
-import { FaSun, FaMoon } from 'react-icons/fa';
 
-const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+const API_URL = import.meta.env.VITE_API_URL;
+const socket = io(API_URL);
+console.log('🔍 Loaded API_URL:', API_URL);
 
-let DefaultIcon = L.icon({
+// Fix Leaflet icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: iconRetina,
   iconUrl: icon,
-  shadowUrl: iconShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
+  shadowUrl: shadow,
 });
-L.Marker.prototype.options.icon = DefaultIcon;
 
 function App() {
-  const [alerts, setAlerts] = useState([]);
-  const [formData, setFormData] = useState({ type: '', description: '', latitude: '', longitude: '' });
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
-  const [isAdmin, setIsAdmin] = useState(false);
   const { t, i18n } = useTranslation();
+
+  const [theme, setTheme] = useState('light');
+  const [type, setType] = useState('');
+  const [description, setDescription] = useState('');
+  const [location, setLocation] = useState({ lat: null, lon: null });
+  const [alerts, setAlerts] = useState([]);
+  const [admin, setAdmin] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [token, setToken] = useState('');
+  const [showInstall, setShowInstall] = useState(false);
   const deferredPrompt = useRef(null);
 
-  // Preload alert.mp3 to cache for offline
+  // Theme
   useEffect(() => {
-    const audio = new Audio('/alert.mp3');
-    audio.load();
+    const stored = localStorage.getItem('theme');
+    const system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    const initial = stored || system;
+    document.documentElement.setAttribute('data-theme', initial);
+    setTheme(initial);
   }, []);
 
+  const toggleTheme = () => {
+    const next = theme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    setTheme(next);
+  };
+
+  // Language
+  useEffect(() => {
+    const storedLang = localStorage.getItem('lang');
+    if (storedLang) i18n.changeLanguage(storedLang);
+  }, []);
+
+  const changeLanguage = (lang) => {
+    i18n.changeLanguage(lang);
+    localStorage.setItem('lang', lang);
+  };
+
+  // Location
+  useEffect(() => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      },
+      (err) => {
+        alert(t('locationDenied'));
+        console.error('Geolocation error:', err);
+      }
+    );
+  }, []);
+
+  // Alerts
   const fetchAlerts = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/alerts`);
+      const res = await fetch(`${API_URL}/api/alerts`);
       const data = await res.json();
-      setAlerts(data.reverse());
+      setAlerts(data);
     } catch (err) {
-      console.error('Failed to fetch alerts', err);
+      console.error('Failed to fetch alerts:', err);
     }
   };
 
@@ -48,18 +91,13 @@ function App() {
     fetchAlerts();
   }, []);
 
+  // Sockets
   useEffect(() => {
     socket.on('new-alert', (alert) => {
       setAlerts((prev) => [alert, ...prev]);
-
-      // Play sound
       const audio = new Audio('/alert.mp3');
-      audio.play().catch((err) => console.warn('Audio playback failed:', err));
-
-      // Trigger vibration
-      if (navigator.vibrate) {
-        navigator.vibrate([200, 100, 200]);
-      }
+      audio.play().catch(console.error);
+      navigator.vibrate?.([200, 100, 200]);
     });
 
     socket.on('alert-resolved', (updated) => {
@@ -72,162 +110,215 @@ function App() {
     };
   }, []);
 
+  // Admin Token
+  useEffect(() => {
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+      setToken(savedToken);
+      setAdmin(true);
+    }
+  }, []);
+
+  // Submit Alert
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/alerts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData),
-    });
-    if (res.ok) {
-      setFormData({ type: '', description: '', latitude: '', longitude: '' });
-    }
-  };
-
-  const handleResolve = async (id) => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/alerts/${id}/resolve`, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (!res.ok) alert('Resolve failed');
-  };
-
-  const handleLogin = async () => {
-    const password = prompt('Enter admin password');
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    });
-    const data = await res.json();
-    if (res.ok && data.token) {
-      localStorage.setItem('token', data.token);
-      setIsAdmin(true);
-    } else {
-      alert('Login failed');
-    }
-  };
-
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    localStorage.setItem('theme', next);
-  };
-
-  const isValidCoords = (lat, lon) =>
-    typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon);
-
-  const handleInstallPrompt = (e) => {
-    e.preventDefault();
-    deferredPrompt.current = e;
-  };
-
-  useEffect(() => {
-    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
-  }, []);
-
-  const handleInstallClick = () => {
-    if (deferredPrompt.current) {
-      deferredPrompt.current.prompt();
-      deferredPrompt.current.userChoice.then(() => {
-        deferredPrompt.current = null;
+    try {
+      const res = await fetch(`${API_URL}/api/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type,
+          description,
+          latitude: location.lat,
+          longitude: location.lon,
+        }),
       });
+      if (res.ok) {
+        alert(t('reportSuccess'));
+        setType('');
+        setDescription('');
+      } else {
+        alert(t('reportFail'));
+      }
+    } catch (err) {
+      console.error('Submit error:', err);
+      alert(t('reportError'));
     }
   };
 
-  const handleLangChange = (e) => {
-    i18n.changeLanguage(e.target.value);
-    localStorage.setItem('lang', e.target.value);
+  // Admin Login
+  const handleLogin = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        setAdmin(true);
+        setToken(data.token);
+        localStorage.setItem('token', data.token);
+        alert(t('loginSuccess'));
+      } else {
+        alert(t('loginFail'));
+      }
+    } catch (err) {
+      console.error(err);
+      alert(t('loginError'));
+    }
   };
 
+  // Resolve Alert
+  const resolveAlert = async (id) => {
+    try {
+      const res = await fetch(`${API_URL}/api/alerts/${id}/resolve`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAlerts((prev) => prev.map((a) => (a._id === data.alert._id ? data.alert : a)));
+      } else {
+        alert(t('resolveFail'));
+      }
+    } catch (err) {
+      console.error(err);
+      alert(t('resolveError'));
+    }
+  };
+
+  // PWA Banner
   useEffect(() => {
-    const savedLang = localStorage.getItem('lang') || 'en';
-    i18n.changeLanguage(savedLang);
+    const handler = (e) => {
+      e.preventDefault();
+      deferredPrompt.current = e;
+      setShowInstall(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  return (
-    <div className={`app ${theme}`}>
-      <header>
-        <h1>{t('title')}</h1>
-        <select onChange={handleLangChange} value={i18n.language}>
-          <option value="en">English</option>
-          <option value="hi">हिंदी</option>
-        </select>
-        <button onClick={toggleTheme}>{theme === 'dark' ? <FaSun /> : <FaMoon />}</button>
-        {!isAdmin && <button onClick={handleLogin}>{t('adminLogin')}</button>}
-        {deferredPrompt.current && <button onClick={handleInstallClick}>{t('installApp')}</button>}
-      </header>
+  const handleInstall = async () => {
+    const promptEvent = deferredPrompt.current;
+    if (!promptEvent) return;
+    promptEvent.prompt();
+    const choice = await promptEvent.userChoice;
+    if (choice.outcome === 'accepted') {
+      console.log('PWA installed');
+    }
+    setShowInstall(false);
+    deferredPrompt.current = null;
+  };
 
+  const handleCloseInstall = () => {
+    setShowInstall(false);
+    deferredPrompt.current = null;
+  };
+
+  // -------------------- UI --------------------
+  return (
+    <div style={{ padding: '2rem' }}>
+      {/* Language and Theme */}
+      <button onClick={toggleTheme}>{theme === 'light' ? '🌙 Dark' : '🔆 Light'}</button>
+      <div>
+        {t('language')}:
+        <button onClick={() => changeLanguage('en')}>EN</button>
+        <button onClick={() => changeLanguage('hi')}>हिंदी</button>
+      </div>
+
+      {/* Form */}
+      <h2>{t('reportEmergency')}</h2>
       <form onSubmit={handleSubmit}>
-        <input
-          placeholder={t('type')}
-          value={formData.type}
-          onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+        <select value={type} onChange={(e) => setType(e.target.value)} required>
+          <option value="">{t('selectType')}</option>
+          <option value="fire">🔥 {t('fire')}</option>
+          <option value="flood">🌊 {t('flood')}</option>
+          <option value="earthquake">🌍 {t('earthquake')}</option>
+          <option value="violence">🚔 {t('violence')}</option>
+          <option value="medical">🩺 {t('medical')}</option>
+        </select>
+        <textarea
+          placeholder={t('describePlaceholder')}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={4}
           required
         />
-        <input
-          placeholder={t('description')}
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          required
-        />
-        <input
-          placeholder={t('latitude')}
-          value={formData.latitude}
-          onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) })}
-          type="number"
-          required
-        />
-        <input
-          placeholder={t('longitude')}
-          value={formData.longitude}
-          onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) })}
-          type="number"
-          required
-        />
-        <button type="submit">{t('submit')}</button>
+        <button type="submit">{t('submitReport')}</button>
       </form>
 
-      <MapContainer center={[28.61, 77.23]} zoom={5} style={{ height: '400px' }}>
-        <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        {alerts.filter(a => isValidCoords(a.latitude, a.longitude)).map((alert, idx) => (
-          <Marker key={idx} position={[alert.latitude, alert.longitude]}>
-            <Popup>
-              <strong>{alert.type.toUpperCase()}</strong>
-              <br />
-              {alert.description}
-              <br />
-              <small>
-                {alert.timestamp ? new Date(alert.timestamp).toLocaleString() : '—'}
-              </small>
-              <br />
-              {alert.resolved && (
-                <>
-                  ✅ {t('resolved')}
-                  <br />
-                  <small>
-                    {alert.resolvedAt ? new Date(alert.resolvedAt).toLocaleString() : ''}
-                  </small>
-                </>
-              )}
-              {isAdmin && !alert.resolved && (
-                <button onClick={() => handleResolve(alert._id)}>{t('resolve')}</button>
-              )}
-            </Popup>
-          </Marker>
-        ))}
-      </MapContainer>
+      {/* Admin */}
+      <h3>{t('adminLogin')}</h3>
+      {!admin ? (
+        <>
+          <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" />
+          <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" type="password" />
+          <button onClick={handleLogin}>{t('login')}</button>
+        </>
+      ) : (
+        <ul>
+          {alerts.filter((a) => !a.resolved).map((alert) => (
+            <li key={alert._id}>
+              {alert.type} - {alert.description} -{' '}
+              {alert.timestamp && new Date(alert.timestamp).toLocaleString()}
+              <button onClick={() => resolveAlert(alert._id)}>{t('resolve')}</button>
+            </li>
+          ))}
+        </ul>
+      )}
 
-      <footer>
-        <p>{t('footer')}</p>
-      </footer>
+      {/* Map */}
+      {location.lat !== null && location.lon !== null && (
+        <>
+          <h3>🗺️ {t('alertMap')}</h3>
+          <MapContainer
+            center={[location.lat, location.lon]}
+            zoom={13}
+            style={{ height: '400px', width: '100%' }}
+          >
+            <TileLayer
+              attribution="&copy; OpenStreetMap"
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <Marker position={[location.lat, location.lon]}>
+              <Popup>{t('youAreHere')}</Popup>
+            </Marker>
+            {alerts.map((a, i) => (
+              a.latitude && a.longitude && (
+                <Marker key={i} position={[a.latitude, a.longitude]}>
+                  <Popup>
+                    {a.type} - {a.description}
+                    <br />
+                    {a.timestamp && new Date(a.timestamp).toLocaleString()}
+                    {a.resolved && <div>✅ {t('resolved')}</div>}
+                  </Popup>
+                </Marker>
+              )
+            ))}
+          </MapContainer>
+        </>
+      )}
+
+      {/* Live Alerts */}
+      <h3>📢 {t('liveAlerts')}</h3>
+      <ul>
+        {alerts.map((a, i) => (
+          <li key={i}>
+            <strong>{a.type}</strong>: {a.description}{' '}
+            {a.resolved && <span style={{ color: 'green' }}>✅ {t('resolved')}</span>}
+          </li>
+        ))}
+      </ul>
+
+      {/* PWA Banner */}
+      {showInstall && (
+        <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: '#fff', padding: '1rem', borderRadius: 12, boxShadow: '0 2px 10px rgba(0,0,0,0.3)' }}>
+          <span>{t('installBanner')}</span>
+          <button onClick={handleInstall}>📲 {t('installApp')}</button>
+          <button onClick={handleCloseInstall}>×</button>
+        </div>
+      )}
     </div>
   );
 }
