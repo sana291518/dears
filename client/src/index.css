@@ -38,6 +38,11 @@
   margin: 0;
   padding: 0;
 }
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   font-family: var(--font-main);
   background-color: var(--bg-color);
@@ -47,27 +52,41 @@ body {
   line-height: 1.6;
 }
 
+/* ---------- FOCUS VISIBLE FOR ACCESSIBILITY ---------- */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
 /* ---------- TYPOGRAPHY ---------- */
 h1, h2, h3 {
   color: var(--primary-color);
   margin-bottom: 0.5rem;
 }
+
 h2 {
   font-size: 1.4rem;
 }
+
 h3 {
   font-size: 1.2rem;
   margin-top: 1.5rem;
 }
 
 /* ---------- CONTAINERS ---------- */
-form, .admin-panel, .map-container, .alert-list {
+form,
+.admin-panel,
+.map-container,
+.alert-list {
   background: var(--card-bg);
   padding: 1rem;
   margin: 1rem auto;
   border-radius: 10px;
   max-width: 600px;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
 }
 
 /* ---------- BUTTONS ---------- */
@@ -83,12 +102,15 @@ button {
   cursor: pointer;
   transition: background-color 0.25s;
 }
+
 button:hover {
   background-color: var(--button-hover);
 }
 
 /* ---------- INPUTS ---------- */
-input, textarea, select {
+input,
+textarea,
+select {
   display: block;
   width: 100%;
   margin: 0.5rem 0;
@@ -105,21 +127,41 @@ ul {
   list-style: none;
   padding: 0;
 }
+
 li {
   background: var(--card-bg);
   padding: 0.75rem;
   margin: 0.5rem 0;
   border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-/* ---------- MAP ---------- */
+/* ---------- MAP SECTION FIX ---------- */
+.map-section {
+  padding: 0;
+  margin: 1rem auto;
+  max-width: 800px;
+}
+
+.map-container {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .leaflet-container {
   height: 400px;
+  max-height: 80vh;
   width: 100%;
   border-radius: 12px;
   overflow: hidden;
   margin-top: 1rem;
+}
+
+@media (max-width: 600px) {
+  .leaflet-container {
+    height: 300px;
+  }
 }
 
 /* ---------- INSTALL BANNER ---------- */
@@ -132,7 +174,7 @@ li {
   color: var(--text-color);
   padding: 1rem;
   border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   z-index: 999;
 }
 
@@ -141,6 +183,7 @@ li {
   body {
     padding: 1rem;
   }
+
   button {
     width: 100%;
     margin-top: 0.5rem;
